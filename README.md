@@ -6,6 +6,8 @@ Constellation is an interactive 3D planning canvas that renders a written busine
 
 It runs entirely in the browser as a single, portable HTML file — no build step, no server — and deploys as a static page on GitHub Pages.
 
+**▶ Live demo: [abbytes-sudo.github.io/interactive-business-planner-3d](https://abbytes-sudo.github.io/interactive-business-planner-3d/)**
+
 ---
 
 ## Screenshots
@@ -93,7 +95,7 @@ Under the React shell sits an **imperative Three.js scene**: React owns the chro
 
 ## Run it
 
-Open `index.html` in any modern browser, or visit the live demo (GitHub Pages). Everything loads from a CDN — there's nothing to install and nothing to build.
+Open `index.html` in any modern browser, or visit the **[live demo](https://abbytes-sudo.github.io/interactive-business-planner-3d/)**. Everything loads from a CDN — there's nothing to install and nothing to build.
 
 ---
 
