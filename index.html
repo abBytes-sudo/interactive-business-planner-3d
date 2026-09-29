@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Constellation · Interactive 3D Planning Canvas</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,10 +24,10 @@
     --ink:#E8EDF9; --mute:#7C89A6; --bg:#04050c; --panel:rgba(10,13,26,0.78); --line:rgba(120,150,220,0.14);
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Open Sans',system-ui,sans-serif;overflow:hidden;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Open Sans',system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;}
   h1,h2,h3,h4{font-family:'Raleway',system-ui,sans-serif;letter-spacing:-0.01em;margin:0;}
-  #graph{position:fixed;inset:0;}
-  #graph canvas{display:block;}
+  #graph{position:fixed;inset:0;touch-action:none;}
+  #graph canvas{display:block;touch-action:none;}
   #atmos{position:fixed;inset:0;pointer-events:none;
     background:
       radial-gradient(1100px 640px at 20% 38%, rgba(60,90,180,0.10), transparent 62%),
@@ -113,7 +113,18 @@
   #boot h1{color:#7FB4FF;font-size:19px;margin-bottom:12px;}
   #boot p{color:#7C89A6;max-width:520px;font-size:13px;line-height:1.6;}
   #boot-err{color:#fb7185;font-family:'JetBrains Mono';font-size:12px;white-space:pre-wrap;margin-top:16px;}
-  @media (max-width:760px){ #brand h1{font-size:13px;} #toolbar{max-width:66vw;gap:6px;} #search input{width:90px;} #legend,#flow,#stats{display:none;} }
+  #mhint{display:none;}
+  @media (max-width:760px){
+    #brand{top:12px;left:14px;gap:9px;} #brand .badge{width:34px;height:34px;border-radius:10px;font-size:12px;} #brand h1{font-size:13px;} #brand .sub{font-size:8px;}
+    #toolbar{top:58px;left:14px;right:14px;max-width:none;justify-content:flex-start;gap:6px;}
+    #search{display:none;} .btn{padding:7px 10px;font-size:10px;} .rounds button{padding:5px 9px;font-size:10px;}
+    #legend,#flow,#stats{display:none;}
+    #panel{width:min(390px,100vw);}
+    #mhint{display:block;position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:11;pointer-events:none;
+      font-family:'JetBrains Mono';font-size:10px;letter-spacing:.06em;color:#c6d2e8;background:var(--panel);border:1px solid var(--line);
+      border-radius:20px;padding:8px 15px;backdrop-filter:blur(14px);white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.5);animation:mhintfade 6.5s ease forwards;}
+  }
+  @keyframes mhintfade{0%,68%{opacity:1;}100%{opacity:0;visibility:hidden;}}
 </style>
 </head>
 <body>
@@ -269,9 +280,10 @@ function App(){
     const labelLayer=document.getElementById('labels');
     const tip=document.getElementById('tip');
     let W=window.innerWidth,H2=window.innerHeight;
+    const isMobile=(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches)||W<=760;
 
-    const renderer=new T.WebGLRenderer({antialias:true});
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    const renderer=new T.WebGLRenderer({antialias:!isMobile,powerPreference:'high-performance'});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio,isMobile?1.5:2));
     renderer.setSize(W,H2); renderer.setClearColor(0x04050c,1);
     container.appendChild(renderer.domElement);
     const scene=new T.Scene(); scene.fog=new T.FogExp2(0x04050c,0.00055);
@@ -288,7 +300,7 @@ function App(){
 
     // starfield + nebula (persistent)
     const bg=new T.Group(); scene.add(bg);
-    (function(){ const N=1700,pos=new Float32Array(N*3);
+    (function(){ const N=isMobile?800:1700,pos=new Float32Array(N*3);
       for(let i=0;i<N;i++){const r=1000+Math.random()*3000,th=Math.random()*6.283,ph=Math.acos(2*Math.random()-1);
         pos[i*3]=r*Math.sin(ph)*Math.cos(th);pos[i*3+1]=r*Math.sin(ph)*Math.sin(th)*0.6;pos[i*3+2]=r*Math.cos(ph);}
       const geo=new T.BufferGeometry(); geo.setAttribute('position',new T.BufferAttribute(pos,3));
@@ -378,8 +390,20 @@ function App(){
     let hoverId=null;
     function pick(cx,cy){ const r=renderer.domElement.getBoundingClientRect(); mouse.x=((cx-r.left)/r.width)*2-1; mouse.y=-((cy-r.top)/r.height)*2+1; ray.setFromCamera(mouse,camera); const hits=ray.intersectObjects(hitList,false); return hits.length?hits[0].object.userData.id:null; }
     function panBy(dx,dy){ const rt=new T.Vector3().setFromMatrixColumn(camera.matrix,0), up=new T.Vector3().setFromMatrixColumn(camera.matrix,1), k=radius*0.0016; target.addScaledVector(rt,-dx*k); target.addScaledVector(up,dy*k); goalTarget.copy(target); }
-    const onDown=e=>{ dragging=true;moved=false; panning=(e.button===1||e.button===2||e.shiftKey||spaceDown); lx=e.clientX;ly=e.clientY; };
+    // pointer state — unified mouse/pen/touch; two touches = pinch-zoom + two-finger pan
+    const pointers=new Map(); let pinchDist=0, pinchMid=null;
+    const onDown=e=>{
+      if(e.pointerType==='touch'){ pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+        if(pointers.size===2){ dragging=false; panning=false; const p=[...pointers.values()];
+          pinchDist=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y); pinchMid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2}; return; }
+        if(pointers.size>2) return; }
+      dragging=true;moved=false; panning=(e.button===1||e.button===2||e.shiftKey||spaceDown); lx=e.clientX;ly=e.clientY; };
     const onMove=e=>{
+      if(e.pointerType==='touch'&&pointers.has(e.pointerId)) pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(pointers.size>=2){ const p=[...pointers.values()], d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y), mid={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};
+        if(pinchDist>0) goalRadius=Math.max(160,Math.min(3200,goalRadius*(pinchDist/d)));
+        if(pinchMid) panBy(mid.x-pinchMid.x, mid.y-pinchMid.y);
+        pinchDist=d; pinchMid=mid; moved=true; return; }
       if(dragging){ const dx=e.clientX-lx,dy=e.clientY-ly; lx=e.clientX;ly=e.clientY; if(Math.abs(dx)+Math.abs(dy)>3)moved=true;
         if(panning){ panBy(dx,dy); container.style.cursor='grabbing'; }
         else { theta-=dx*0.005; phi=Math.max(0.25,Math.min(Math.PI-0.25,phi-dy*0.005)); } }
@@ -388,7 +412,12 @@ function App(){
         if(hoverId&&tip.style.opacity==='1'){ tip.style.left=e.clientX+'px'; tip.style.top=e.clientY+'px'; } }
       else if(hoverId){ hoverId=null; applyFocus(); tip.style.opacity=0; }
     };
-    const onUp=e=>{ if(dragging&&!moved&&!panning && e.target===renderer.domElement){ const id=pick(e.clientX,e.clientY); if(id){ setSelected(nodeObjs[id].node); setDrift(false); flyTo(id); } else setSelected(null); } dragging=false; panning=false; container.style.cursor='grab'; };
+    const endPointer=e=>{ if(e.pointerType==='touch'){ pointers.delete(e.pointerId);
+      if(pointers.size<2){ pinchDist=0; pinchMid=null; }
+      if(pointers.size===1){ const p=[...pointers.values()][0]; lx=p.x; ly=p.y; dragging=true; moved=true; panning=false; } } };
+    const onUp=e=>{ if(dragging&&!moved&&!panning && e.target===renderer.domElement){ const id=pick(e.clientX,e.clientY); if(id){ setSelected(nodeObjs[id].node); setDrift(false); flyTo(id); } else setSelected(null); }
+      endPointer(e); if(pointers.size===0){ dragging=false; panning=false; } container.style.cursor='grab'; };
+    const onCancel=e=>{ endPointer(e); if(pointers.size===0){ dragging=false; panning=false; } };
     const onWheel=e=>{ e.preventDefault();
       if(e.shiftKey){ panBy(e.deltaY,0); return; }
       if(Math.abs(e.deltaX)>Math.abs(e.deltaY)){ panBy(e.deltaX,0); return; }
@@ -397,6 +426,7 @@ function App(){
     renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
     window.addEventListener('pointermove',onMove);
     window.addEventListener('pointerup',onUp);
+    window.addEventListener('pointercancel',onCancel);
     renderer.domElement.addEventListener('wheel',onWheel,{passive:false});
 
     // keyboard movement — full roam: WASD/arrows pan, Q/E zoom, R refit, Shift = faster
@@ -446,7 +476,7 @@ function App(){
     const onResize=()=>{ W=window.innerWidth;H2=window.innerHeight; camera.aspect=W/H2; camera.updateProjectionMatrix(); renderer.setSize(W,H2); if(composer)composer.setSize(W,H2); };
     window.addEventListener('resize',onResize);
     const boot=document.getElementById('boot'); if(boot)boot.style.display='none';
-    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize',onResize); window.removeEventListener('pointermove',onMove); window.removeEventListener('pointerup',onUp); window.removeEventListener('keydown',onKeyDown); window.removeEventListener('keyup',onKeyUp); renderer.domElement.removeEventListener('pointerdown',onDown); renderer.domElement.removeEventListener('wheel',onWheel); renderer.dispose(); container.innerHTML=''; };
+    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize',onResize); window.removeEventListener('pointermove',onMove); window.removeEventListener('pointerup',onUp); window.removeEventListener('pointercancel',onCancel); window.removeEventListener('keydown',onKeyDown); window.removeEventListener('keyup',onKeyUp); renderer.domElement.removeEventListener('pointerdown',onDown); renderer.domElement.removeEventListener('wheel',onWheel); renderer.dispose(); container.innerHTML=''; };
   },[]);
 
   // rebuild scene when nodes/links change
@@ -488,6 +518,7 @@ function App(){
       Object.keys(GROUP_COLORS).map(g=>el('div',{key:g,className:'row'}, el('span',{className:'sw',style:{background:GROUP_COLORS[g],color:GROUP_COLORS[g]}}), el('span',null,GROUP_LABEL[g]))),
       el('div',{className:'hint'},el('b',{style:{color:'#c6d2e8'}},'WASD / arrows'),' move · ',el('b',{style:{color:'#c6d2e8'}},'Q/E'),' or scroll zoom · drag orbit · Space-/right-drag pan · ',el('b',{style:{color:'#c6d2e8'}},'R'),' refit · click a node to open.')),
     el('div',{id:'flow',className:'hud'}, el('span',{className:'cap'},'Now'), el('span',{className:'bar'}), el('span',{className:'cap'},'Month 24')),
+    el('div',{id:'mhint'},'drag to orbit · pinch to zoom · tap a node'),
     el('div',{id:'stats',className:'hud glass'}, el('div',{className:'s'},el('b',null,data.nodes.length),'nodes'), el('div',{className:'s'},el('b',null,data.links.length),'links'), el('div',{className:'s'},el('b',null,round.slice(1)),'round')),
     el('div',{id:'panel',className:selected?'open':'',style:{'--c':sc}}, selected&&el(React.Fragment,null,
       el('div',{className:'close',onClick:()=>setSelected(null)},'×'),
