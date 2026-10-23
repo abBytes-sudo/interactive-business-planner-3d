@@ -96,4 +96,4 @@ Open `index.html` in any modern browser, or visit the **[live demo](https://abby
 
 A personal product experiment, built AI-assisted. I scoped the problem and decided the data model (root → spines → atoms with typed links), the interaction design (fly-to focus, work-tree navigation, per-round annotation) and what shipped. AI coding agents wrote the code under my direction; I tested it on desktop and mobile and deployed it to GitHub Pages.
 
-More work at **[github.com/abBytes-sudo](https://github.com/abBytes-sudo)** · [LinkedIn](https://www.linkedin.com/in/abhishek-m-b934a925a)
+More work at **[github.com/abBytes-sudo](https://github.com/abBytes-sudo)**
