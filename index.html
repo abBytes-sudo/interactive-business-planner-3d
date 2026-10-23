@@ -7,9 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@8.0.7/babel.min.js"></script>
 <script src="https://unpkg.com/three@0.147.0/build/three.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
 <script src="https://unpkg.com/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
@@ -442,7 +442,6 @@ function App(){
     window.addEventListener('keydown',onKeyDown); window.addEventListener('keyup',onKeyUp);
 
     function flyTo(id){ const o=nodeObjs[id]; if(!o)return; goalTarget.copy(o.pos); goalRadius=o.node.kind==='atom'?300:o.node.kind==='spine'?430:760; }
-    window.__dbg={ screen:id=>{ const o=nodeObjs[id]; if(!o)return null; const p=o.pos.clone().project(camera); return {x:(p.x*.5+.5)*renderer.domElement.clientWidth,y:(-p.y*.5+.5)*renderer.domElement.clientHeight,z:p.z}; }, size:()=>[renderer.domElement.clientWidth,renderer.domElement.clientHeight] };
 
     // imperative handle for React
     api.current={ focus:applyFocus,
@@ -491,9 +490,15 @@ function App(){
     const node={id,name:newName.trim(),group:selected.group,kind:'atom',timing:'New · '+round,desc:'Initiative added during planning '+round+' under “'+selected.name+'”.',custom:true};
     setCustom(p=>[...p,node]); setCLinks(p=>[...p,{source:selected.id,target:id,dep:true,custom:true}]); setNewName('');
     setTimeout(()=>{ setSelected(node); if(api.current)api.current.flyTo(id); },260); };
-  const saveSnapshot=()=>{ const s=document.getElementById('app-source'),o=s.textContent; const st={notes,custom:{nodes:customNodes,links:customLinks}};
-    const j=JSON.stringify(st).replace(/</g,'\\u003c'); s.textContent=o.replace(/const PREBAKED_STATE = \{.*?\};/,'const PREBAKED_STATE = '+j+';');
-    const html="<!DOCTYPE html>\n<html lang=\"en\">\n"+document.documentElement.innerHTML+"\n</html>"; s.textContent=o;
+  const saveSnapshot=()=>{ const st={notes,custom:{nodes:customNodes,links:customLinks}};
+    const j=JSON.stringify(st).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
+    // export a clean copy of the page (no live canvas, rendered UI or compiled script) so the file boots like a fresh load
+    const doc=document.documentElement.cloneNode(true), q=sel=>doc.querySelector(sel);
+    const src=q('#app-source'); src.textContent=src.textContent.replace(/^const PREBAKED_STATE = .*$/m,()=>'const PREBAKED_STATE = '+j+';');
+    ['#graph','#labels','#root','#tip','#boot-err'].forEach(sel=>{ const n=q(sel); if(n){ n.innerHTML=''; n.removeAttribute('style'); } });
+    const boot=q('#boot'); if(boot) boot.removeAttribute('style');
+    doc.querySelectorAll('script[data-compiled]').forEach(n=>n.remove());
+    const html="<!DOCTYPE html>\n<html lang=\"en\">\n"+doc.innerHTML+"\n</html>";
     const b=new Blob([html],{type:'text/html'}),u=URL.createObjectURL(b),a=document.createElement('a'); a.href=u;a.download='Constellation-Plan.html'; document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u); };
 
   const byId=useMemo(()=>Object.fromEntries(data.nodes.map(n=>[n.id,n])),[data]);
@@ -513,7 +518,7 @@ function App(){
       el('button',{className:'btn'+(drift?' on':''),onClick:()=>setDrift(d=>!d)}, drift?'❋ Drift':'❋ Still'),
       el('button',{className:'btn'+(energy?' on':''),onClick:()=>setEnergy(p=>!p)}, '✦ Signals'),
       el('button',{className:'btn',onClick:refit}, '⊹ Refit'),
-      el('button',{className:'btn save',onClick:saveSnapshot,title:'Download a self-contained copy with notes baked in'}, '⬇ Snapshot')),
+      el('button',{className:'btn save',onClick:saveSnapshot,title:'Download a single-file copy with notes baked in'}, '⬇ Snapshot')),
     el('div',{id:'legend',className:'hud glass'}, el('h4',null,'Plan Spines'),
       Object.keys(GROUP_COLORS).map(g=>el('div',{key:g,className:'row'}, el('span',{className:'sw',style:{background:GROUP_COLORS[g],color:GROUP_COLORS[g]}}), el('span',null,GROUP_LABEL[g]))),
       el('div',{className:'hint'},el('b',{style:{color:'#c6d2e8'}},'WASD / arrows'),' move · ',el('b',{style:{color:'#c6d2e8'}},'Q/E'),' or scroll zoom · drag orbit · Space-/right-drag pan · ',el('b',{style:{color:'#c6d2e8'}},'R'),' refit · click a node to open.')),
@@ -541,7 +546,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(el(App));
 </script>
 <script>
   (function run(){ if(typeof Babel==='undefined'||typeof React==='undefined'||typeof THREE==='undefined') return setTimeout(run,60);
-    try{ var src=document.getElementById('app-source').textContent; var out=Babel.transform(src,{presets:[['react',{runtime:'classic'}]]}).code; var s=document.createElement('script'); s.textContent=out; document.body.appendChild(s); }
+    try{ var src=document.getElementById('app-source').textContent; var out=Babel.transform(src,{presets:[['react',{runtime:'classic'}]]}).code; var s=document.createElement('script'); s.setAttribute('data-compiled',''); s.textContent=out; document.body.appendChild(s); }
     catch(err){ var e=document.getElementById('boot-err'); if(e)e.textContent='Transform error: '+(err&&err.message?err.message:err); console.error(err); }
   })();
 </script>
